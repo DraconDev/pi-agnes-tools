@@ -43,20 +43,19 @@ const VIDEO_MODELS = new Set(["agnes-video-v2.0", "agnes-video-2.5", "agnes-vide
 const DEFAULT_IMAGE_MODEL = "agnes-image-2.5-flash";
 const DEFAULT_VIDEO_MODEL = "agnes-video-2.5-flash";
 
-// Seed catalog (live /v1/models discovery picks up newer ids automatically).
+// Text/LLM models only — image/video generation goes through the tools +
+// skill, not the /model selector.
 const AGNES_SEED = [
   "agnes-2.5-flash",
   "agnes-2.5-pro",
   "agnes-2.5-pro-alpha",
   "agnes-2.0-flash",
   "agnes-3.0-flash",
-  "agnes-image-2.0-flash",
-  "agnes-image-2.1-flash",
-  "agnes-image-2.5-flash",
-  "agnes-video-v2.0",
-  "agnes-video-2.5",
-  "agnes-video-2.5-flash",
 ];
+
+function isTextModel(id) {
+  return !id.startsWith("agnes-image-") && !id.startsWith("agnes-video-");
+}
 
 function isImageModel(id) {
   return IMAGE_MODELS.has(id) || id.startsWith("agnes-image-");
@@ -341,7 +340,9 @@ async function fetchStandaloneModels(baseUrl, apiKey, signal) {
   if (!res.ok) throw new Error("HTTP " + res.status + " " + res.statusText);
   const payload = await res.json().catch(() => null);
   const data = payload && Array.isArray(payload.data) ? payload.data : Array.isArray(payload) ? payload : [];
-  return data.filter((m) => m && m.id).map((m) => toModelConfig(m.id));
+  return data
+    .filter((m) => m && m.id && isTextModel(m.id))
+    .map((m) => toModelConfig(m.id));
 }
 
 function makeRefreshModels(baseUrl, apiKeyEnv, providerId) {
