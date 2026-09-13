@@ -1,6 +1,6 @@
 {
   "name": "pi-agnes-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi extension that exposes Agnes AI image/video generation as callable tools (no model switch needed). Pairs with pi-agnes for auth.",
   "type": "module",
   "keywords": [
@@ -16,7 +16,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DraconDev/pi-agnes-tools"
+    "url": "git+https://github.com/DraconDev/pi-agnes-tools.git"
   },
   "files": [
     "extensions",
