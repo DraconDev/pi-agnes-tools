@@ -487,6 +487,39 @@ function streamStandalone(model, context, options) {
   return openAICompletionsApi().streamSimple(model, context, options);
 }
 
+function debugLog(msg) {
+  if (process.env.PI_AGNES_TOOLS_DEBUG) {
+    try { console.error("[pi-agnes-tools] " + msg); } catch { /* ignore */ }
+  }
+}
+
+// Best-effort synchronous check: will pi-agnes (the provider plugin) load?
+// Used to decide whether standalone provider registration at load time is
+// safe. False positives are harmless (session_start backstop still covers a
+// missing provider); false negatives resolve in pi-agnes's favor when it
+// loads after us, since its registration replaces ours.
+function piAgnesLikelyPresent() {
+  const settingsFiles = [];
+  try {
+    settingsFiles.push(join(homedir(), ".pi", "agent", "settings.json"));
+  } catch { /* ignore */ }
+  try {
+    settingsFiles.push(join(process.cwd(), ".pi", "settings.json"));
+  } catch { /* ignore */ }
+  for (const file of settingsFiles) {
+    try {
+      const data = JSON.parse(readFileSync(file, "utf8"));
+      const pkgs = data && Array.isArray(data.packages) ? data.packages : [];
+      for (const entry of pkgs) {
+        if (typeof entry !== "string") continue;
+        if (entry.includes("pi-agnes-tools")) continue;
+        if (entry.includes("pi-agnes")) return true;
+      }
+    } catch { /* unreadable settings — ignore */ }
+  }
+  return false;
+}
+
 function registerStandaloneProviders(pi) {
   const defs = [
     { id: "agnes", name: "Agnes AI", baseUrl: ENDPOINTS.agnes.baseUrl, apiKeyEnv: "AGNES_API_KEY" },
@@ -541,20 +574,42 @@ export default function (pi) {
     execute: executeVideo,
   });
 
+  // Load-time standalone registration so `--model agnes/...` resolves at
+  // startup when pi-agnes is absent. Skipped when pi-agnes is detected — it
+  // owns the providers then (better discovery + routing). If our detection
+  // missed it and it loads after us, its registration replaces ours, which
+  // is still the correct end state.
+  if (piAgnesLikelyPresent()) {
+    debugLog("pi-agnes detected, deferring provider registration");
+  } else {
+    debugLog("pi-agnes not detected, registering standalone providers at load");
+    try {
+      registerStandaloneProviders(pi);
+    } catch (error) {
+      debugLog("load-time registration failed: " + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
   // Standalone provider fallback: only register the agnes/agnes-cn catalog
   // when nothing else provides it (i.e. pi-agnes is not installed).
   // registerProvider with `models` REPLACES the whole provider catalog, so
   // registering unconditionally would clobber pi-agnes's discovery+routing.
   // Checking here (session_start, after all extensions loaded) is
-  // load-order independent.
+  // load-order independent and backstops a missed load-time detection.
   pi.on("session_start", async (_event, ctx) => {
     try {
       const ids = ctx.modelRegistry.getRegisteredProviderIds() || [];
-      if (ids.includes("agnes")) return; // pi-agnes (or equivalent) owns it
-    } catch {
+      debugLog("session_start, registered providers: " + ids.join(","));
+      if (ids.includes("agnes")) {
+        debugLog("agnes provider present, deferring to existing registration");
+        return; // pi-agnes (or equivalent) owns it
+      }
+    } catch (error) {
+      debugLog("registry check failed: " + (error instanceof Error ? error.message : String(error)));
       // If the registry can't be inspected, fall through and register —
       // a duplicate standalone catalog is better than none.
     }
+    debugLog("registering standalone agnes/agnes-cn providers");
     registerStandaloneProviders(pi);
   });
 }
